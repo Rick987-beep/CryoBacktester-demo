@@ -1,0 +1,9 @@
+package: CryoBacktester-demo
+built_utc: 2026-10-25T11:22:15Z
+lab_git_rev: fcba5fd
+blueprint_date_range: 2026-10-06 → 2026-10-09
+blueprint_entry_date: 2026-10-07
+market_span: 2026-07-27 → 2026-10-24
+market_parquet_files: 180
+download_latest: https://apps.aureas.xyz/backtester-demo/CryoBacktester-demo-latest.zip
+github: https://github.com/Rick987-beep/CryoBacktester-demo

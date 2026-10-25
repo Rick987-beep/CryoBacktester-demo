@@ -1,0 +1,298 @@
+"""
+config.py — Backtester2 application configuration loader.
+
+Reads backtester/core/config.toml and exposes typed dataclasses for each section.
+Import the module-level ``cfg`` singleton — loaded at import time, and refreshed
+in place by ``reload_config`` / ``apply_config_text`` (Configuration UI).
+
+Usage::
+
+    from backtester.core.config import cfg
+
+    print(cfg.pricing.expiry_hour_utc)  # 8
+    print(cfg.data.options_parquet)     # absolute path to snapshot parquet
+"""
+import os
+from dataclasses import dataclass
+
+import tomllib
+
+_CORE_DIR = os.path.dirname(os.path.abspath(__file__))
+_BACKTESTER_ROOT = os.path.dirname(_CORE_DIR)  # backtester/
+_CONFIG_PATH = os.path.join(_CORE_DIR, "config.toml")
+
+
+# ── Config dataclasses ────────────────────────────────────────────
+
+@dataclass
+class DataConfig:
+    options_parquet: str
+    spot_parquet: str
+    macro_calendar_dir: str
+    tardis_data_dir: str
+    snapshots_dir: str
+    reports_dir: str
+    snapshot_interval_min: int
+    spot_interval_min: int
+    parquet_compression: str
+
+
+@dataclass
+class SimulationConfig:
+    account_size_usd: float
+    progress_interval: int
+    top_n_console: int
+    top_n_report: int
+    grid_workers_hard_cap: int = 16
+    grid_min_combos_parallel: int = 8
+    grid_min_combos_per_worker: int = 8
+
+
+@dataclass
+class PricingConfig:
+    hours_per_year: float
+    risk_free_rate: float
+    expiry_hour_utc: int
+    strike_step_usd: int
+    vol_lookback_candles: int
+    min_vol_candles: int
+    default_vol: float
+    gap_reset_seconds: int
+    min_vol: float
+    max_vol: float
+
+
+@dataclass
+class RepricingConfig:
+    min_mark_usd: float
+    slip_pct_zero_price: float
+
+
+@dataclass
+class FeesConfig:
+    model: str
+    index_rate: float
+    price_cap_frac: float
+    perp_taker_rate: float
+
+
+@dataclass
+class ScoringConfig:
+    min_trades:      int
+    w_sharpe:        float
+    w_pnl:           float
+    w_max_dd:        float
+    w_profit_factor: float
+    w_r_squared:     float
+    w_omega:         float
+    w_ulcer:         float
+    w_consistency:   float
+    # Recency overlay
+    recency_pct:          float
+    recency_weight:       float
+    recency_min_trades:   int
+    recency_gate_enabled: bool
+    recency_gate_sharpe:  float
+
+
+@dataclass
+class BacktesterConfig:
+    data: DataConfig
+    simulation: SimulationConfig
+    pricing: PricingConfig
+    repricing: RepricingConfig
+    fees: FeesConfig
+    scoring: ScoringConfig
+
+
+# ── Loader ────────────────────────────────────────────────────────
+
+def load_config(path=_CONFIG_PATH):
+    # type: (str) -> BacktesterConfig
+    """Load backtester/core/config.toml and return a BacktesterConfig instance.
+
+    Path fields that describe the data plane (market, reports, klines, …)
+    are resolved by ``backtester.core.paths`` (repo ``data/`` + env overrides).
+    Remaining TOML path fields are relative to the ``backtester/`` package root.
+    """
+    with open(path, "rb") as fh:
+        raw = tomllib.load(fh)
+
+    base = _BACKTESTER_ROOT
+
+    def _abs(p):
+        # type: (str) -> str
+        """Resolve a backtester/-relative path to an absolute path."""
+        return os.path.normpath(os.path.join(base, p))
+
+    from backtester.core.paths import (
+        macro_calendar_dir,
+        market_data_dir,
+        runs_dir,
+        tardis_raw_dir,
+    )
+
+    d = raw["data"]
+    s = raw["simulation"]
+    p = raw["pricing"]
+    r = raw["repricing"]
+    f = raw["fees"]
+    sc = raw["scoring"]
+
+    market = str(market_data_dir())
+    return BacktesterConfig(
+        data=DataConfig(
+            options_parquet=market,
+            spot_parquet=market,
+            macro_calendar_dir=str(macro_calendar_dir()),
+            tardis_data_dir=str(tardis_raw_dir()),
+            snapshots_dir=market,
+            reports_dir=str(runs_dir()),
+            snapshot_interval_min=int(d["snapshot_interval_min"]),
+            spot_interval_min=int(d["spot_interval_min"]),
+            parquet_compression=str(d["parquet_compression"]),
+        ),
+        simulation=SimulationConfig(
+            account_size_usd=float(s["account_size_usd"]),
+            progress_interval=int(s["progress_interval"]),
+            top_n_console=int(s["top_n_console"]),
+            top_n_report=int(s["top_n_report"]),
+            grid_workers_hard_cap=int(s.get("grid_workers_hard_cap", 16)),
+            grid_min_combos_parallel=int(s.get("grid_min_combos_parallel", 8)),
+            grid_min_combos_per_worker=int(s.get("grid_min_combos_per_worker", 8)),
+        ),
+        pricing=PricingConfig(
+            hours_per_year=float(p["hours_per_year"]),
+            risk_free_rate=float(p["risk_free_rate"]),
+            expiry_hour_utc=int(p["expiry_hour_utc"]),
+            strike_step_usd=int(p["strike_step_usd"]),
+            vol_lookback_candles=int(p["vol_lookback_candles"]),
+            min_vol_candles=int(p["min_vol_candles"]),
+            default_vol=float(p["default_vol"]),
+            gap_reset_seconds=int(p["gap_reset_seconds"]),
+            min_vol=float(p["min_vol"]),
+            max_vol=float(p["max_vol"]),
+        ),
+        repricing=RepricingConfig(
+            min_mark_usd=float(r["min_mark_usd"]),
+            slip_pct_zero_price=float(r["slip_pct_zero_price"]),
+        ),
+        fees=FeesConfig(
+            model=str(f["model"]),
+            index_rate=float(f["index_rate"]),
+            price_cap_frac=float(f["price_cap_frac"]),
+            perp_taker_rate=float(f["perp_taker_rate"]),
+        ),
+        scoring=ScoringConfig(
+            min_trades=int(sc["min_trades"]),
+            w_sharpe=float(sc["w_sharpe"]),
+            w_pnl=float(sc["w_pnl"]),
+            w_max_dd=float(sc["w_max_dd"]),
+            w_profit_factor=float(sc["w_profit_factor"]),
+            w_r_squared=float(sc["w_r_squared"]),
+            w_omega=float(sc["w_omega"]),
+            w_ulcer=float(sc["w_ulcer"]),
+            w_consistency=float(sc["w_consistency"]),
+            recency_pct=float(sc["recency_pct"]),
+            recency_weight=float(sc["recency_weight"]),
+            recency_min_trades=int(sc["recency_min_trades"]),
+            recency_gate_enabled=bool(sc["recency_gate_enabled"]),
+            recency_gate_sharpe=float(sc["recency_gate_sharpe"]),
+        ),
+    )
+
+
+# ── Module-level singleton ────────────────────────────────────────
+
+cfg = load_config()
+
+
+def config_path() -> str:
+    """Absolute path to the application config.toml."""
+    return _CONFIG_PATH
+
+
+def config_display_path() -> str:
+    """Repo-relative path shown in the UI."""
+    return "backtester/core/config.toml"
+
+
+def read_config_text(path: str | None = None) -> str:
+    """Return raw TOML text from disk (UTF-8)."""
+    with open(path or _CONFIG_PATH, encoding="utf-8") as fh:
+        return fh.read()
+
+
+def validate_config_text(text: str) -> BacktesterConfig:
+    """Parse TOML text and build a BacktesterConfig (does not write disk).
+
+    Raises ``tomllib.TOMLDecodeError`` / ``KeyError`` / ``TypeError`` /
+    ``ValueError`` on invalid content.
+    """
+    import tempfile
+
+    tomllib.loads(text)  # fail fast on syntax before temp write
+    fd, tmp = tempfile.mkstemp(suffix=".toml")
+    try:
+        os.close(fd)
+        with open(tmp, "w", encoding="utf-8") as fh:
+            fh.write(text)
+        return load_config(tmp)
+    finally:
+        try:
+            os.unlink(tmp)
+        except OSError:
+            pass
+
+
+def write_config_text(text: str, path: str | None = None) -> None:
+    """Validate TOML then atomically replace config.toml on disk."""
+    import tempfile
+
+    target = path or _CONFIG_PATH
+    # Validate structure via full loader (temp file) before touching the real file
+    validate_config_text(text)
+
+    directory = os.path.dirname(os.path.abspath(target)) or "."
+    fd, tmp = tempfile.mkstemp(prefix=".config_", suffix=".toml.tmp", dir=directory)
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8") as fh:
+            fh.write(text)
+            fh.flush()
+            os.fsync(fh.fileno())
+        os.replace(tmp, target)
+    except Exception:
+        try:
+            os.unlink(tmp)
+        except OSError:
+            pass
+        raise
+
+
+def reload_config(path: str | None = None) -> BacktesterConfig:
+    """Reload config.toml into the process-wide ``cfg`` singleton (in place).
+
+    Preserves object identity so ``from backtester.core.config import cfg``
+    holders see updated section objects. Also refreshes import-time constants
+    in ``backtester.core.pricing``.
+    """
+    new = load_config(path or _CONFIG_PATH)
+    cfg.data = new.data
+    cfg.simulation = new.simulation
+    cfg.pricing = new.pricing
+    cfg.repricing = new.repricing
+    cfg.fees = new.fees
+    cfg.scoring = new.scoring
+    try:
+        from backtester.core import pricing as _pricing
+
+        _pricing.refresh_config_constants()
+    except Exception:
+        pass
+    return cfg
+
+
+def apply_config_text(text: str, path: str | None = None) -> BacktesterConfig:
+    """Validate, write to disk, and hot-reload ``cfg``. Returns the live config."""
+    write_config_text(text, path=path)
+    return reload_config(path)

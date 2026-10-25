@@ -1,0 +1,15 @@
+[tool.pytest.ini_options]
+markers = [
+    "live: tests that require live network access (deselected by default)",
+    "slow_ui: tests that start a real Panel server (skipped by default)",
+    "perf: inner-worker speedup gate (skip unless CRYOBT_RUN_PERF=1)",
+]
+addopts = "-m 'not live and not slow_ui'"
+testpaths = ["tests"]
+norecursedirs = ["backtester/data", "backtester/data_archive", "backtester/data_spot_rebuilt", "backtester/reports", "data"]
+
+# Pylance / Pyright: same interpreter as AGENTS.md (Python 3.12, .venv).
+[tool.pyright]
+pythonVersion = "3.12"
+venvPath = "."
+venv = ".venv"
